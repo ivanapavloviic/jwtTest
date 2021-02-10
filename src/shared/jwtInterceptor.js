@@ -1,33 +1,45 @@
 import axios from "axios";
 import store from '../store/index';
 import { API_URL } from '../.env';
+
 const jwtInterceptor = axios.create({});
 
 
-jwtInterceptor.interceptors.request.use(config => {
-
-    const authData = store.getters['auth/getAuthData'];
-    const isAuthenticated = store.getters['auth/isTokenActive'];
-    if(isAuthenticated){
-        config.headers.common["Authorization"] = `bearer ${authData.token}` ;
-        return config;
+jwtInterceptor.interceptors.request.use((config) => {
+    const authData = store.getters["auth/getAuthData"];
+    if (authData == null) {
+      return config;
     }
-    else{
-        const payload ={
-            access_token: authData.token,
-            refresh_token:authData.refresh_token
+  
+    config.headers.common["Authorization"] = `bearer ${authData.token}`;
+    return config;
+  });
+  
+  jwtInterceptor.interceptors.response.use(
+    (response) => {
+      return response;
+    },
+    async (error) => {
+      if (error.response.status === 401) {
+        const authData = store.getters["auth/getAuthData"];
+        const payload = {
+          access_token: authData.token,
+          refresh_token: authData.refreshToken,
         };
-        axios.post(`${API_URL}/api/profile/token/refresh/`,payload)
-        .then(response => {
-            console.log(response);
-            store.commit('auth/saveTokenData',response.data);
-            return jwtInterceptor(config);
-        },error => {
-            config.log(error);
-            return jwtInterceptor(config);
-        });
+  
+        var response = await axios.post(
+          `${API_URL}/api/profile/token/refresh/`,
+          payload
+        );
+        await store.dispatch("auth/saveTokensToStorage", response.data);
+        error.config.headers[
+          "Authorization"
+        ] = `bearer ${response.data.access_token}`;
+        return axios(error.config);
+      } else {
+        return Promise.reject(error);
+      }
     }
-
-});
-
-export default jwtInterceptor;
+  );
+  
+  export default jwtInterceptor;
